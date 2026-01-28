@@ -43,6 +43,12 @@ int main(int argc, char** argv)
         return -2;
     }
 
+    int output_is_stdout = false;
+    if (output_path_buffer[0] == 0)
+    {
+        output_is_stdout = true;
+    }
+
     bool is_running = true;
 
     do
@@ -50,12 +56,18 @@ int main(int argc, char** argv)
         char* response = NULL;
         // http_get("https://api.open-meteo.com/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", &response, NULL);
         http_get(url_buffer, &response, NULL);
-        printf("[%s]\n", response);
+        
+        if(output_is_stdout)
+        {
+            printf("[%s]\n", response);
+        }
+        else
+        {
+            FILE* file = fopen(output_path_buffer, "w");
+            fprintf(file, "%s", response);
+            fclose(file);
+        }
 
-
-        FILE* file = fopen(output_path_buffer, "w");
-        fprintf(file, "%s", response);
-        fclose(file);
         free(response);
 
         if (interval == 0)

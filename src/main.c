@@ -8,6 +8,7 @@
 
 #include "weather/http.h"
 #include "cli/cli.h"
+#include "file_helper/file_helper.h"
 
 /* TODO: Right now we use curl so any urls with & need to be \&, should not be a problem when we use our own http stuff */
 
@@ -42,7 +43,7 @@ int main(int argc, char** argv)
 
         return -2;
     }
-
+    
     int output_is_stdout = false;
     if (output_path_buffer[0] == 0)
     {
@@ -63,9 +64,10 @@ int main(int argc, char** argv)
         }
         else
         {
-            FILE* file = fopen(output_path_buffer, "w");
-            fprintf(file, "%s", response);
-            fclose(file);
+            /* TODO: LS Filename/format? */
+            int res = File_Helper_Write(output_path_buffer, "filename", response, strlen(response), FILE_HELPER_MODE_APPEND, true);
+            if (res != FILE_HELPER_RESULT_SUCCESS)
+                printf("Failed to write to file code: %d\n", res);
         }
 
         free(response);

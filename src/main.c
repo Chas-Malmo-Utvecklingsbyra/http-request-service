@@ -56,6 +56,7 @@ int main(int argc, char** argv)
         FILE* file = fopen(output_path_buffer, "w");
         fprintf(file, "%s", response);
         fclose(file);
+        free(response);
 
         if (interval == 0)
             break;

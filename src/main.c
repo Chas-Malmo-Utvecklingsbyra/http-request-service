@@ -6,6 +6,7 @@
 #include <stdbool.h>
 #include <unistd.h>
 #include <sys/time.h>
+#include <signal.h>
 
 #include "weather/http.h"
 #include "cli/cli.h"
@@ -14,14 +15,23 @@
 /* TODO: Right now we use curl so any urls with & need to be \&, should not be a problem when we use our own http stuff */
 #define MAX_TIMESTAMP_BUFFER_SIZE 20
 
-int main(int argc, char** argv)
+bool running = true;
+
+void signal_handler(int signum)
+{    
+    printf("Received signal %d, exiting...\n", signum);
+    running = false;
+    exit(0);
+}
+
+int main(int argc, char **argv)
 {
     CLI cli;
 
     int interval = 0;
-    char url_buffer[256];
-    char route_buffer[256];
-    char output_path_buffer[256];
+    char url_buffer[512];
+    char route_buffer[512];
+    char output_path_buffer[512];
     
     memset(url_buffer, 0, sizeof(url_buffer));
     memset(route_buffer, 0, sizeof(route_buffer));
@@ -49,17 +59,20 @@ int main(int argc, char** argv)
     {
         output_is_stdout = true;
     }
-    bool is_running = true;
+    
+    //printf("Starting with url: %s, route: %s, output: %s, intervals: %d\n", url_buffer, route_buffer, output_path_buffer, interval);
+
+    signal(SIGTERM, signal_handler);
+    signal(SIGINT, signal_handler);
 
     do
     {
         char* response = NULL;
-        char full_path[512];
+        char full_path[1024];
 
         // http_get("https://api.open-meteo.com + /v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", &response, NULL);
         snprintf(full_path, sizeof(full_path) + 1, "%s%s", url_buffer, route_buffer);
         http_get(full_path, &response, NULL);
-
         if(output_is_stdout)
         {
             printf("[%s]\n", response);
@@ -84,7 +97,7 @@ int main(int argc, char** argv)
             break;
         
         sleep(interval);
-    } while (is_running);
+    } while (running);
 
     return 0;
 }

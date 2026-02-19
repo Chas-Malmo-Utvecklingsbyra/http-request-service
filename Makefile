@@ -1,15 +1,16 @@
 export CC = gcc
-C_VERSION = c99
+export CXX = g++
+CXX_VERSION = c++17
 
 LIBS = curl
 
 INCLUDE_DIRS = include src include/core
 INCLUDE_FILES = 
-CFLAGS = -std=$(C_VERSION) -Wall -Wextra -Werror -Wpedantic $(addprefix -include ,$(INCLUDE_FILES)) $(addprefix -I,$(INCLUDE_DIRS)) $(addprefix -l,$(LIBS)) -g
+CXXFLAGS = -std=$(CXX_VERSION) -Wall -Wextra -Werror -Wpedantic $(addprefix -include ,$(INCLUDE_FILES)) $(addprefix -I,$(INCLUDE_DIRS)) $(addprefix -l,$(LIBS)) -g
 
 SRC_DIR := src
 # Exclude test folders from main build
-SRC_FILES := $(shell find $(SRC_DIR) -name "*.c" -not -path "*/tests/*")
+SRC_FILES := $(shell find $(SRC_DIR) -name "*.cpp" -not -path "*/tests/*")
 
 export BUILD_DIR := $(CURDIR)/build
 export OBJ_DIR := $(BUILD_DIR)/obj
@@ -22,7 +23,7 @@ PROGRAM_OBJ_DIR = $(BUILD_DIR)/program_obj
 BIN_DIR := $(BUILD_DIR)/bin
 BIN := $(BIN_DIR)/program
 
-PROGRAM_OBJS = $(patsubst $(SRC_DIR)/%.c,$(PROGRAM_OBJ_DIR)/%.o,$(SRC_FILES))
+PROGRAM_OBJS = $(patsubst $(SRC_DIR)/%.cpp,$(PROGRAM_OBJ_DIR)/%.o,$(SRC_FILES))
 
 all: build_core $(PROGRAM_OBJS) $(BIN)
 	@echo "Build done."
@@ -37,18 +38,16 @@ build_program:
 	@echo "OBJS:" $(PROGRAM_OBJS)
 	@echo " "
 
-$(PROGRAM_OBJ_DIR)/%.o: $(SRC_DIR)/%.c
-	@echo "Compiling $< with flags $(CFLAGS) and defines $(DEFINES_PREFIXED) to $@..."
+$(PROGRAM_OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@echo "Compiling $< with flags $(CXXFLAGS) and defines $(DEFINES_PREFIXED) to $@..."
 	@mkdir -p $(dir $@)
-	@$(CC) -c $< $(CFLAGS) -o $@ $(DEFINES_PREFIXED)
+	@$(CXX) -c $< $(CXXFLAGS) -o $@ $(DEFINES_PREFIXED)
 
 $(BIN): $(PROGRAM_OBJS) build_core
 	@mkdir -p $(BIN_DIR)
-	@$(CC) -o $@ $(shell find $(OBJ_DIR)/core -name "*.o") $(PROGRAM_OBJS) $(CFLAGS) $(DEFINES_PREFIXED)
+	@$(CXX) -o $@ $(shell find $(OBJ_DIR)/core -name "*.o") $(PROGRAM_OBJS) $(CXXFLAGS) $(DEFINES_PREFIXED)
 
 run: $(BIN)
-#	mkdir -p $(BIN_DIR)/frontend
-#	cp -r src/frontend/* $(BIN_DIR)/frontend
 	@$(BIN)
 
 clean:

@@ -32,6 +32,7 @@ int main(int argc, char **argv)
     char url_buffer[512];
     char route_buffer[512];
     char output_path_buffer[512];
+    char name_buffer[512];
     
     memset(url_buffer, 0, sizeof(url_buffer));
     memset(route_buffer, 0, sizeof(route_buffer));
@@ -41,6 +42,7 @@ int main(int argc, char **argv)
     CLI_Argument_Add(&cli, "--url", "-u", Argument_Option_String, url_buffer);
     CLI_Argument_Add(&cli, "--route", "-r", Argument_Option_String, route_buffer);
     CLI_Argument_Add(&cli, "--output", "-o", Argument_Option_String, output_path_buffer);
+    CLI_Argument_Add(&cli, "--name", "-n", Argument_Option_String, name_buffer);
     
     if (!CLI_Parse(&cli, argc, argv))
     {
@@ -80,9 +82,14 @@ int main(int argc, char **argv)
         else
         {
             time_t current_time = time(NULL);
-            char file_name[MAX_TIMESTAMP_BUFFER_SIZE];
+            char file_name[512];
             struct tm* tm_info = localtime(&current_time);
-            if (strftime(file_name, MAX_TIMESTAMP_BUFFER_SIZE, "%Y-%m-%d", tm_info) == 0)
+
+            if (name_buffer[0] != 0)
+            {
+                snprintf(file_name, sizeof(file_name), "%s", name_buffer);
+            }
+            else if (strftime(file_name, MAX_TIMESTAMP_BUFFER_SIZE, "%Y-%m-%d", tm_info) == 0)
             {
                 snprintf(file_name, MAX_TIMESTAMP_BUFFER_SIZE, "Unknown Time");
             }

@@ -1,3 +1,4 @@
+#define _POSIX_C_SOURCE 200809L
 #include <stdio.h>
 #include <curl/curl.h>
 #include <sys/time.h>
@@ -7,6 +8,9 @@
 #include <unistd.h>
 #include <sys/time.h>
 #include <signal.h>
+#include <errno.h>
+#include <time.h>
+#include <string.h>
 
 #include "weather/http.h"
 #include "cli/cli.h"
@@ -17,18 +21,81 @@
 
 bool running = true;
 
+int write_to_parent(int write_fd, const char *message)
+{
+    if (write_fd == -1)
+        return -1;
+
+    size_t message_len = strlen(message);
+    ssize_t bytes_written = write(write_fd, message, message_len);
+    if (bytes_written == -1)
+    {
+        perror("Failed to write to parent");
+        return -1;
+    }
+    else if ((size_t)bytes_written != message_len)
+    {
+        fprintf(stderr, "Partial write to parent: expected %zu bytes, wrote %zd bytes\n", message_len, bytes_written);
+        return -1;
+    }
+
+    return 0;
+}
+
+int read_from_parent(int read_fd, char *buffer, size_t buffer_size)
+{
+    if (read_fd == -1)
+        return -1;
+
+    ssize_t bytes_read;
+    while ((bytes_read = read(read_fd, buffer, buffer_size - 1)) == -1)
+    {
+        if (errno == EINTR)
+        {
+            return -1; // Interrupted by signal, caller should check if should quit
+        }
+        perror("Failed to read from parent");
+        return -1;
+    }
+    
+    if (bytes_read == 0)
+    {
+        fprintf(stderr, "Parent closed the pipe\n");
+        return -1;
+    }
+
+    buffer[bytes_read] = '\0';
+    return 0;
+}
+
 void signal_handler(int signum)
 {    
-    printf("Received signal %d, exiting...\n", signum);
+    (void)signum;
+    printf("HTTP Request Service received signal to terminate: %d\n", signum);
     running = false;
-    exit(0);
+}
+
+void setup_signal_handlers(void)
+{
+    struct sigaction sa;
+    memset(&sa, 0, sizeof(sa));
+    sa.sa_handler = signal_handler;
+    sigemptyset(&sa.sa_mask);
+    sa.sa_flags = 0;  // Don't use SA_RESTART - allow interruption of system calls
+    
+    sigaction(SIGTERM, &sa, NULL);
+    sigaction(SIGINT, &sa, NULL);
 }
 
 int main(int argc, char **argv)
 {
     CLI cli;
-
+    bool output_is_stdout = false;
+    bool use_pipe = false;
     int interval = 0;
+    int read_fd = -1;
+    int write_fd = -1;
+    
     char url_buffer[512];
     char route_buffer[512];
     char output_path_buffer[512];
@@ -37,53 +104,49 @@ int main(int argc, char **argv)
     memset(url_buffer, 0, sizeof(url_buffer));
     memset(route_buffer, 0, sizeof(route_buffer));
     memset(output_path_buffer, 0, sizeof(output_path_buffer));
+    memset(name_buffer, 0, sizeof(name_buffer));
     
     CLI_Argument_Add(&cli, "--intervals", "-i", Argument_Option_Integer, &interval);
     CLI_Argument_Add(&cli, "--url", "-u", Argument_Option_String, url_buffer);
     CLI_Argument_Add(&cli, "--route", "-r", Argument_Option_String, route_buffer);
     CLI_Argument_Add(&cli, "--output", "-o", Argument_Option_String, output_path_buffer);
     CLI_Argument_Add(&cli, "--name", "-n", Argument_Option_String, name_buffer);
-    
+    CLI_Argument_Add(&cli, "--read-fd", "-fd", Argument_Option_Integer, &read_fd);
+    CLI_Argument_Add(&cli, "--write-fd", "-fd", Argument_Option_Integer, &write_fd);
+
+    setup_signal_handlers();
+
     if (!CLI_Parse(&cli, argc, argv))
     {
         printf("Failed to parse arguments.\n");
-        
         return -1;
     }
     if (url_buffer[0] == 0)
     {
         printf("Empty url.\n");
-
         return -2;
     }
-    int output_is_stdout = false;
     if (output_path_buffer[0] == 0)
     {
         output_is_stdout = true;
     }
-    
-    //printf("Starting with url: %s, route: %s, output: %s, intervals: %d\n", url_buffer, route_buffer, output_path_buffer, interval);
-
-    signal(SIGTERM, signal_handler);
-    signal(SIGINT, signal_handler);
+    if (read_fd != -1 || write_fd != -1)
+    {
+        use_pipe = true;
+    }
 
     do
     {
         char* response = NULL;
         char full_path[1024];
 
-        // http_get("https://api.open-meteo.com + /v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", &response, NULL);
         snprintf(full_path, sizeof(full_path) + 1, "%s%s", url_buffer, route_buffer);
         http_get(full_path, &response, NULL);
-        if(output_is_stdout)
-        {
-            printf("[%s]\n", response);
-        }
-        else
+        if(!output_is_stdout)
         {
             time_t current_time = time(NULL);
             char file_name[512];
-            struct tm* tm_info = localtime(&current_time);
+            struct tm *tm_info = localtime(&current_time);
 
             if (name_buffer[0] != 0)
             {
@@ -93,17 +156,78 @@ int main(int argc, char **argv)
             {
                 snprintf(file_name, MAX_TIMESTAMP_BUFFER_SIZE, "Unknown Time");
             }
-
-            int res = File_Helper_Write(output_path_buffer, file_name, response, strlen(response), FILE_HELPER_MODE_WRITE, true);
-            if (res != FILE_HELPER_RESULT_SUCCESS)
-                printf("Failed to write to file code: %d\n", res);
+            /* TODO, be able to choose FILE_HELPER_MODE WRITE/APPEND */
+            if (File_Helper_Write(output_path_buffer, file_name, response, strlen(response), FILE_HELPER_MODE_WRITE, true) == FILE_HELPER_RESULT_SUCCESS)
+            {
+                if (use_pipe)
+                {
+                    // int result = write_to_parent(write_fd, response); //TODO: test this
+                    int result = write_to_parent(write_fd, "NEW_DATA");
+                    if (result != 0)
+                        printf("Failed to write to parent process.");
+                }
+            }
+            else
+            {
+                printf("Failed to write to file.\n");
+            }
         }
+        else
+        {
+            printf("[%s]\n", response);
+            if (use_pipe)
+            {
+                // int result = write_to_parent(write_fd, response); //TODO: test this
+                int result = write_to_parent(write_fd, "NEW_DATA");
+                if (result != 0)
+                    printf("Failed to write to parent process.");
+            }
+        }
+
         free(response);
 
+        if (use_pipe)
+        {
+            printf("Waiting for parent process to acknowledge...\n");
+            char response_buffer[128];
+            int res = read_from_parent(read_fd, response_buffer, sizeof(response_buffer));
+            if (res == -1)
+            {
+                break;
+            }
+            else
+            {
+                if (strcmp(response_buffer, "ACK") == 0)
+                {
+                    printf("Received acknowledgment from parent: %s\n", response_buffer);
+                }
+                else if (strcmp(response_buffer, "QUIT") == 0)
+                {
+                    printf("Received QUIT from parent process. Exiting...\n");
+                    break;
+                }
+                else
+                {
+                    printf("Received unexpected message from parent process: %s\n", response_buffer);
+                }
+            }
+        }
+        
         if (interval == 0)
             break;
+
+        if (!running)
+            break;
+
+        struct timespec ts;
+        ts.tv_sec = interval;
+        ts.tv_nsec = 0;
+        int sleep_result = nanosleep(&ts, NULL);
         
-        sleep(interval);
+        // If interrupted by signal and should quit, exit loop
+        if (sleep_result == -1 && !running)
+            break;
+        
     } while (running);
 
     return 0;

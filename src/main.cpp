@@ -1,91 +1,119 @@
 #include <iostream>
+#include <string>
+#include <chrono>
+#include <thread>
+#include <sstream>
+#include <iomanip>
+#include <filesystem>
+#include <fstream>
+#include <stdexcept>
 #include <curl/curl.h>
-#include <sys/time.h>
-#include <cstdlib>
-#include <cstring>
-#include <ctime>
-#include <unistd.h>
 
-
-extern "C" {
-    #include "weather/http.h"
-    #include "cli/cli.h"
-    #include "core/file_helper/file_helper.h"
+size_t write_callback(void* data, size_t size, size_t nmemb, void* userp)
+{
+  auto total = size * nmemb;
+  static_cast<std::string*>(userp)
+      ->append(static_cast<char*>(data), total);
+    return total;
 }
 
+    std::string http_get(const std::string& url)
+{
 
-constexpr int MAX_TIMESTAMP_BUFFER_SIZE = 20;
+    CURL* curl = curl_easy_init();
+    if (!curl) throw std::runtime_error("CURL init failed");
+
+  std::string response;
+
+  curl_easy_setopt(curl, CURLOPT_URL, url.c_str());
+  curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, write_callback);
+  curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+    if (curl_easy_perform(curl) != CURLE_OK)
+{
+
+    curl_easy_cleanup(curl);
+    throw std::runtime_error("HTTP request failed");
+}
+
+  curl_easy_cleanup(curl);
+  return response;
+}
 
 int main(int argc, char** argv)
 {
-    CLI cli;
+  try
+{
+
     int interval = 0;
-    char url_buffer[256];
-    char route_buffer[256];
-    char output_path_buffer[256];
+    std::string url   = "https://api.open-meteo.com";
+    std::string route = "/v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m";
+    std::string output;
 
-    std::memset(url_buffer, 0, sizeof(url_buffer));
-    std::memset(route_buffer, 0, sizeof(route_buffer));
-    std::memset(output_path_buffer, 0, sizeof(output_path_buffer));
+    for (int i = 1; i < argc; ++i)
+{
+        std::string arg = argv[i];
 
-    CLI_Argument_Add(&cli, "--intervals", "-i", Argument_Option_Integer, &interval);
-    CLI_Argument_Add(&cli, "--url", "-u", Argument_Option_String, url_buffer);
-    CLI_Argument_Add(&cli, "--route", "-r", Argument_Option_String, route_buffer);
-    CLI_Argument_Add(&cli, "--output", "-o", Argument_Option_String, output_path_buffer);
+    if ((arg == "-i" || arg == "--intervals") && i + 1 < argc) interval = std::stoi(argv[++i]);
 
-    if (!CLI_Parse(&cli, argc, argv))
-    {
-        std::cout << "Failed to parse arguments.\n";
-        return -1;
-    }
+    else if ((arg == "-u" || arg == "--url") && i + 1 < argc) url = argv[++i];
 
-    if (url_buffer[0] == 0)
-    {
-        std::cout << "Empty url.\n";
-        return -2;
-    }
+    else if ((arg == "-r" || arg == "--route") && i + 1 < argc) route = argv[++i];
 
-    bool output_is_stdout = false;
-    if (output_path_buffer[0] == 0)
-    {
-        output_is_stdout = true;
-    }
+    else if ((arg == "-o" || arg == "--output") && i + 1 < argc) output = argv[++i];
+}
 
-    bool is_running = true;
+    if (url.empty())
+      throw std::runtime_error("URL is required");
+
     do
-    {
-        char* response = nullptr;
-        char full_path[512];
-        // http_get("https://api.open-meteo.com + /v1/forecast?latitude=52.52&longitude=13.41&hourly=temperature_2m", &response, NULL);
-        std::snprintf(full_path, sizeof(full_path) + 1, "%s%s", url_buffer, route_buffer);
-        http_get(full_path, &response, nullptr);
+{
+        std::string response = http_get(url + route);
 
-        if (output_is_stdout)
-        {
-            std::cout << "[" << response << "]\n";
-        }
-        else
-        {
-            std::time_t current_time = std::time(nullptr);
-            char file_name[MAX_TIMESTAMP_BUFFER_SIZE];
-            std::tm* tm_info = std::localtime(&current_time);
-        if (std::strftime(file_name, MAX_TIMESTAMP_BUFFER_SIZE, "%Y-%m-%d", tm_info) == 0)
-    {
-            std::snprintf(file_name, MAX_TIMESTAMP_BUFFER_SIZE, "Unknown Time");
-    }
+    if (output.empty())
+{
+        std::cout << "[" << response << "]\n";
+}
+    else
+{
+        auto now = std::chrono::system_clock::now();
+        std::time_t t =
+        std::chrono::system_clock::to_time_t(now);
 
-            int res = File_Helper_Write(output_path_buffer, file_name, response, std::strlen(response), FILE_HELPER_MODE_WRITE, true);
-        if (res != FILE_HELPER_RESULT_SUCCESS)
-            std::cout << "Failed to write to file code: " << res << "\n";
-        }
+        std::stringstream ss;
+        ss << std::put_time(std::localtime(&t), "%Y-%m-%d");
 
-        std::free(response);
+        std::filesystem::create_directories(output);
 
-        if (interval == 0)
-            break;
+        std::ofstream file(
+        std::filesystem::path(output) /
+        (ss.str() + ".txt")
+);
 
-        sleep(interval);
-    }   while (is_running);
+    if (!file)
+{
+    throw std::runtime_error("File open failed");
+}
+
+    file << response;
+}
+
+    if (interval == 0)
+{
+    break;
+}
+
+        std::this_thread::sleep_for(
+        std::chrono::seconds(interval)
+);
+
+}   while (true);
+}
+    catch (const std::exception& e)
+{
+        std::cerr << "Error: " << e.what() << "\n";
+    return -1;
+}
 
     return 0;
 }

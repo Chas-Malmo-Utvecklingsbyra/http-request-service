@@ -104,11 +104,13 @@ int main(int argc, char **argv)
     char route_buffer[512];
     char output_path_buffer[512];
     char name_buffer[512];
+    char timestamp_buffer[512];
     
     memset(url_buffer, 0, sizeof(url_buffer));
     memset(route_buffer, 0, sizeof(route_buffer));
     memset(output_path_buffer, 0, sizeof(output_path_buffer));
     memset(name_buffer, 0, sizeof(name_buffer));
+    memset(timestamp_buffer, 0, sizeof(timestamp_buffer));
 
     
     CLI_Argument_Add(&cli, "--intervals", "-i", Argument_Option_Integer, &interval);
@@ -119,6 +121,7 @@ int main(int argc, char **argv)
     CLI_Argument_Add(&cli, "--read-fd", "-fd", Argument_Option_Integer, &read_fd);
     CLI_Argument_Add(&cli, "--write-fd", "-fd", Argument_Option_Integer, &write_fd);
     CLI_Argument_Add(&cli, "--quarter", "-q", Argument_Option_Integer, &specific_time);
+    CLI_Argument_Add(&cli, "--timestamp", "-ts", Argument_Option_String, timestamp_buffer);
 
     setup_signal_handlers();
 
@@ -146,7 +149,7 @@ int main(int argc, char **argv)
     {
         use_pipe = true;
     }
-
+    
     do
     {
         char* response = NULL;
@@ -225,8 +228,9 @@ int main(int argc, char **argv)
             }
         }
         
-        if (interval == 0 && !specified_time)
+        if (interval == 0 && !specified_time && timestamp_buffer[0] == 0)
             break;
+            
 
         if (!running)
             break;
@@ -272,6 +276,30 @@ int main(int argc, char **argv)
             sleep(seconds_to_sleep);
         }
 
+        if (timestamp_buffer[0] != 0)
+        {
+            printf("Timestamp buffer: %s\n", timestamp_buffer);
+
+            time_t current_time = time(NULL);
+            struct tm *tm_info = localtime(&current_time);
+
+            int remaining_hours = 0;
+            int remaining_minutes = 0;
+            //int seconds_to_sleep = 0;
+            //int minutes_in_seconds = MINUTES_TO_SECONDS(current_minutes);
+
+            int hours = -1;
+            int minutes = -1;
+            sscanf(timestamp_buffer, "%d:%d", &hours, &minutes);
+            
+            remaining_hours = (tm_info->tm_hour - hours) - 1;
+            remaining_minutes = (tm_info->tm_min - minutes);
+            
+            printf("Remaining time to next update: %d:%d\n", remaining_hours, remaining_minutes);
+            printf("%d:%d\n", hours, minutes);
+
+            sleep(60);
+        }
     
         if (!specified_time)
         {

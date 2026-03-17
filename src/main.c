@@ -278,27 +278,59 @@ int main(int argc, char **argv)
 
         if (timestamp_buffer[0] != 0)
         {
-            printf("Timestamp buffer: %s\n", timestamp_buffer);
+            // printf("Timestamp buffer: %s\n", timestamp_buffer);
 
             time_t current_time = time(NULL);
             struct tm *tm_info = localtime(&current_time);
 
             int remaining_hours = 0;
             int remaining_minutes = 0;
-            //int seconds_to_sleep = 0;
+            int seconds_to_sleep = 0;
+
             //int minutes_in_seconds = MINUTES_TO_SECONDS(current_minutes);
 
             int hours = -1;
             int minutes = -1;
             sscanf(timestamp_buffer, "%d:%d", &hours, &minutes);
             
-            remaining_hours = (tm_info->tm_hour - hours) - 1;
-            remaining_minutes = (tm_info->tm_min - minutes);
-            
-            printf("Remaining time to next update: %d:%d\n", remaining_hours, remaining_minutes);
-            printf("%d:%d\n", hours, minutes);
+            if (hours < 0 || hours > 23)
+            {
+                printf("Invalid hours in timestamp, must be between 0 and 23.\r\n");
+                return -1;
+            }
+            if (minutes < 0 || minutes > 59)
+            {
+                printf("Invalid minutes in timestamp, must be between 0 and 59.\r\n");
+                return -1;
+            }
 
-            sleep(60);
+            // Ensures that timestamps earlier in the day correctly roll over to the next day
+            if (hours <= tm_info->tm_hour)
+            {
+                hours += 24;
+                // printf("hours after adding: %d\r\n", hours);
+            }
+            
+            if (minutes < tm_info->tm_min)
+            {
+                minutes += 60;
+                // printf("minutes after adding: %d\r\n", minutes);
+            }
+            
+            // printf("%d:%d\n", hours, minutes);
+
+            if (minutes == 0)
+                minutes = 60; // Represents a full hour
+
+            remaining_hours = (hours - tm_info->tm_hour) - 1; // Remove one because of minutes
+            remaining_minutes = (minutes - tm_info->tm_min);
+
+            seconds_to_sleep = (remaining_hours * 3600) + (remaining_minutes * 60); // Convert hours and minutes to seconds and add them together
+            
+            printf("Remaining time to next update: %d:%02d\r\n", remaining_hours, remaining_minutes);
+            printf("Remaining time in seconds: %d\r\n", seconds_to_sleep);
+
+            sleep(seconds_to_sleep);
         }
     
         if (!specified_time)

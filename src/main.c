@@ -19,6 +19,8 @@
 /* TODO: Right now we use curl so any urls with & need to be \&, should not be a problem when we use our own http stuff */
 #define MAX_TIMESTAMP_BUFFER_SIZE 20
 
+#define MINUTES_TO_SECONDS(x) (x*60)
+
 bool running = true;
 
 int write_to_parent(int write_fd, const char *message)
@@ -92,9 +94,11 @@ int main(int argc, char **argv)
     CLI cli;
     bool output_is_stdout = false;
     bool use_pipe = false;
+    bool specified_time = false;
     int interval = 0;
     int read_fd = -1;
     int write_fd = -1;
+    int specific_time = 0;
     
     char url_buffer[512];
     char route_buffer[512];
@@ -105,6 +109,7 @@ int main(int argc, char **argv)
     memset(route_buffer, 0, sizeof(route_buffer));
     memset(output_path_buffer, 0, sizeof(output_path_buffer));
     memset(name_buffer, 0, sizeof(name_buffer));
+
     
     CLI_Argument_Add(&cli, "--intervals", "-i", Argument_Option_Integer, &interval);
     CLI_Argument_Add(&cli, "--url", "-u", Argument_Option_String, url_buffer);
@@ -113,6 +118,7 @@ int main(int argc, char **argv)
     CLI_Argument_Add(&cli, "--name", "-n", Argument_Option_String, name_buffer);
     CLI_Argument_Add(&cli, "--read-fd", "-fd", Argument_Option_Integer, &read_fd);
     CLI_Argument_Add(&cli, "--write-fd", "-fd", Argument_Option_Integer, &write_fd);
+    CLI_Argument_Add(&cli, "--quarter", "-q", Argument_Option_Integer, &specific_time);
 
     setup_signal_handlers();
 
@@ -126,6 +132,12 @@ int main(int argc, char **argv)
         printf("Empty url.\n");
         return -2;
     }
+
+    if (specific_time != 0)
+    {
+        specified_time = true;
+    }
+
     if (output_path_buffer[0] == 0)
     {
         output_is_stdout = true;
@@ -213,21 +225,58 @@ int main(int argc, char **argv)
             }
         }
         
-        if (interval == 0)
+        if (interval == 0 && !specified_time)
             break;
 
         if (!running)
             break;
 
-        struct timespec ts;
-        ts.tv_sec = interval;
-        ts.tv_nsec = 0;
-        int sleep_result = nanosleep(&ts, NULL);
-        
-        // If interrupted by signal and should quit, exit loop
-        if (sleep_result == -1 && !running)
-            break;
-        
+        while (specified_time)
+        {
+            time_t current_time = time(NULL);
+            struct tm *tm_info = localtime(&current_time);
+
+            int minutes = tm_info->tm_min;
+            int seconds_to_sleep = 0;
+            int minutes_in_seconds = MINUTES_TO_SECONDS(minutes);
+
+            if (minutes == 0 || minutes == 15 || minutes == 30 || minutes == 45)
+            {
+                break;
+            }
+
+            if (minutes > 0 && minutes < 15)
+            {
+                seconds_to_sleep = MINUTES_TO_SECONDS(15) - minutes_in_seconds;
+            }
+            else if (minutes > 15 && minutes < 30)
+            {
+                seconds_to_sleep = MINUTES_TO_SECONDS(30) - minutes_in_seconds;
+            }
+            else if (minutes > 30 && minutes < 45)
+            {
+                seconds_to_sleep = MINUTES_TO_SECONDS(45) - minutes_in_seconds;
+            }
+            else if (minutes > 45 && minutes <= 59)
+            {
+                seconds_to_sleep = MINUTES_TO_SECONDS(59) - minutes_in_seconds;
+            }
+            
+            printf("Seconds to sleep: %d\r\n", seconds_to_sleep);
+            sleep(seconds_to_sleep);
+        }
+
+    
+        if (!specified_time)
+        {
+            struct timespec ts;
+            ts.tv_sec = interval;
+            ts.tv_nsec = 0;
+            int sleep_result = nanosleep(&ts, NULL);
+            if (sleep_result == -1)
+                break;
+        }
+
     } while (running);
 
     return 0;

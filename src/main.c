@@ -242,6 +242,7 @@ int main(int argc, char **argv)
 
             if (minutes == 0 || minutes == 15 || minutes == 30 || minutes == 45)
             {
+                sleep(60);
                 break;
             }
 
@@ -259,7 +260,7 @@ int main(int argc, char **argv)
             }
             else if (minutes > 45 && minutes <= 59)
             {
-                seconds_to_sleep = MINUTES_TO_SECONDS(59) - minutes_in_seconds;
+                seconds_to_sleep = MINUTES_TO_SECONDS(60) - minutes_in_seconds;
             }
             
             printf("Seconds to sleep: %d\r\n", seconds_to_sleep);

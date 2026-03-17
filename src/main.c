@@ -263,6 +263,11 @@ int main(int argc, char **argv)
             }
             
             printf("Seconds to sleep: %d\r\n", seconds_to_sleep);
+
+
+            if (!running)
+                return 0;
+
             sleep(seconds_to_sleep);
         }
 
